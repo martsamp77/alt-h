@@ -1,0 +1,31 @@
+# Build results
+bin/
+obj/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Visual Studio
+.vs/
+
+# Rider
+.idea/
+
+# VS Code
+.vscode/
+
+# Logs and diagnostics
+*.log
+*.binlog
+TestResults/
+
+# Publish/package artifacts
+*.nupkg
+*.snupkg
+
+# OS files
+Thumbs.db
+Desktop.ini

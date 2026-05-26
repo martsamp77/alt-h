@@ -18,3 +18,7 @@ bin\Release\net10.0-windows\win-x64\publish\AltHMinimize.exe
 ## Use
 
 Run `AltHMinimize.exe`. It appears in the system tray with menu options to enable or disable `Alt+H`, add or remove itself from Windows startup, and exit.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
