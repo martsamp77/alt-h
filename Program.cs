@@ -19,10 +19,12 @@ internal static class Program
 internal sealed class TrayApplicationContext : ApplicationContext
 {
     private const string AppDisplayName = "Alt-H Minimize";
+    private const string AppIconResourceName = "AltHMinimize.Assets.AltHMinimize.ico";
     private const string StartupValueName = "AltHMinimize";
     private const string StartupRunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
 
     private readonly HotKeyWindow _hotKeyWindow;
+    private readonly Icon _trayIcon;
     private readonly NotifyIcon _notifyIcon;
     private readonly ToolStripMenuItem _enabledItem;
     private readonly ToolStripMenuItem _startupItem;
@@ -33,6 +35,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     public TrayApplicationContext()
     {
         _hotKeyWindow = new HotKeyWindow(MinimizeForegroundWindow);
+        _trayIcon = LoadAppIcon();
 
         _enabledItem = new ToolStripMenuItem("Alt+H Enabled")
         {
@@ -60,7 +63,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _notifyIcon = new NotifyIcon
         {
             ContextMenuStrip = menu,
-            Icon = SystemIcons.Application,
+            Icon = _trayIcon,
             Text = AppDisplayName,
             Visible = true
         };
@@ -141,6 +144,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private static string QuotePath(string path) => $"\"{path}\"";
 
+    private static Icon LoadAppIcon()
+    {
+        using var stream = typeof(Program).Assembly.GetManifestResourceStream(AppIconResourceName)
+            ?? throw new InvalidOperationException($"Missing embedded resource: {AppIconResourceName}");
+        using var icon = new Icon(stream);
+        return (Icon)icon.Clone();
+    }
+
     private void ShowStatusBalloon()
     {
         var status = _hotKeyEnabled ? "Alt+H is enabled." : "Alt+H is disabled.";
@@ -203,6 +214,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _hotKeyWindow.Dispose();
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
+            _trayIcon.Dispose();
         }
 
         _disposed = true;

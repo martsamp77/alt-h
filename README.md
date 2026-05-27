@@ -19,6 +19,15 @@ bin\Release\net10.0-windows\win-x64\publish\AltHMinimize.exe
 
 Run `AltHMinimize.exe`. It appears in the system tray with menu options to enable or disable `Alt+H`, add or remove itself from Windows startup, and exit.
 
+## Project Notes
+
+- The app uses a custom Windows-native icon for the executable and system tray.
+- Releases follow Semantic Versioning: `MAJOR.MINOR.PATCH`.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).

@@ -9,5 +9,11 @@
     <AssemblyName>AltHMinimize</AssemblyName>
     <RootNamespace>AltHMinimize</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\AltHMinimize.ico</ApplicationIcon>
+    <Version>0.1.0</Version>
   </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\AltHMinimize.ico" LogicalName="AltHMinimize.Assets.AltHMinimize.ico" />
+  </ItemGroup>
 </Project>
