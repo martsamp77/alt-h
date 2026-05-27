@@ -6,9 +6,13 @@ This project uses Semantic Versioning: `MAJOR.MINOR.PATCH`.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-26
+
 ### Added
 
 - Added a custom Windows-native tray and executable icon.
+- Added a per-user PowerShell installer for `irm` installs.
+- Added MSI packaging for conventional Windows installs.
 
 ## [0.1.0] - 2026-05-26
 

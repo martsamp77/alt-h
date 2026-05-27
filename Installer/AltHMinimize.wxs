@@ -1,0 +1,37 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Name="Alt-H Minimize"
+    Manufacturer="martsamp77"
+    Version="$(var.ProductVersion)"
+    UpgradeCode="A66018CE-E65B-43D7-A2D2-4F762B0BEE0C"
+    Scope="perUser">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Alt-H Minimize is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="InstallFolder" Name="AltHMinimize" />
+      </Directory>
+    </StandardDirectory>
+
+    <DirectoryRef Id="InstallFolder">
+      <Component Id="ApplicationComponent" Guid="23F77462-5F7D-4590-889C-3640CC98B0F5">
+        <File Id="ApplicationExe" Source="$(var.PublishDir)\AltHMinimize.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="StartupComponent" Guid="7E565B33-113B-4B97-BCFD-7426934EB1BE">
+        <RegistryValue
+          Root="HKCU"
+          Key="Software\Microsoft\Windows\CurrentVersion\Run"
+          Name="AltHMinimize"
+          Type="string"
+          Value="&quot;[InstallFolder]AltHMinimize.exe&quot;"
+          KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="MainFeature" Title="Alt-H Minimize" Level="1">
+      <ComponentRef Id="ApplicationComponent" />
+      <ComponentRef Id="StartupComponent" />
+    </Feature>
+  </Package>
+</Wix>
