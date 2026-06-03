@@ -6,6 +6,15 @@ This project uses Semantic Versioning: `MAJOR.MINOR.PATCH`.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-03
+
+### Added
+
+- Added an optional mouse action that minimizes the focused window from a configurable thumb/side button (Back `XBUTTON1` or Forward `XBUTTON2`), defaulting to the Forward button.
+- Added an optional mouse action that remaps the scroll-wheel click (middle button) to `Ctrl+W` globally, for one-click tab/document closing.
+- Added tray menu controls for the two mouse actions, including a "Side Button Minimizes" submenu (Off / Back / Forward).
+- Added persistence of the mouse-action preferences under `HKCU\Software\AltHMinimize`.
+
 ## [0.2.0] - 2026-05-26
 
 ### Added

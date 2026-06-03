@@ -1,5 +1,3 @@
-using System.ComponentModel;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security;
 using Microsoft.Win32;
@@ -24,17 +22,33 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private const string StartupRunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
 
     private readonly HotKeyWindow _hotKeyWindow;
+    private readonly MouseHook _mouseHook;
     private readonly Icon _trayIcon;
     private readonly NotifyIcon _notifyIcon;
     private readonly ToolStripMenuItem _enabledItem;
+    private readonly ToolStripMenuItem _middleClickItem;
+    private readonly ToolStripMenuItem _sideOffItem;
+    private readonly ToolStripMenuItem _sideBackItem;
+    private readonly ToolStripMenuItem _sideForwardItem;
     private readonly ToolStripMenuItem _startupItem;
 
     private bool _hotKeyEnabled = true;
+    private bool _middleClickEnabled;
+    private SideButton _sideButton;
     private bool _disposed;
 
     public TrayApplicationContext()
     {
         _hotKeyWindow = new HotKeyWindow(MinimizeForegroundWindow);
+
+        _middleClickEnabled = AppSettings.LoadMiddleClickEnabled();
+        _sideButton = AppSettings.LoadSideButton();
+        _mouseHook = new MouseHook(SendCtrlW, MinimizeForegroundWindow)
+        {
+            MiddleClickEnabled = _middleClickEnabled,
+            SideButtonAction = _sideButton,
+        };
+
         _trayIcon = LoadAppIcon();
 
         _enabledItem = new ToolStripMenuItem("Alt+H Enabled")
@@ -43,6 +57,26 @@ internal sealed class TrayApplicationContext : ApplicationContext
             CheckOnClick = false
         };
         _enabledItem.Click += (_, _) => SetHotKeyEnabled(!_hotKeyEnabled, showFailure: true);
+
+        _middleClickItem = new ToolStripMenuItem("Middle-Click Closes Tab (Ctrl+W)")
+        {
+            Checked = _middleClickEnabled,
+            CheckOnClick = false
+        };
+        _middleClickItem.Click += (_, _) => SetMiddleClickEnabled(!_middleClickEnabled);
+
+        _sideOffItem = new ToolStripMenuItem("Off") { CheckOnClick = false };
+        _sideOffItem.Click += (_, _) => SetSideButton(SideButton.Off);
+        _sideBackItem = new ToolStripMenuItem("Back button (XBUTTON1)") { CheckOnClick = false };
+        _sideBackItem.Click += (_, _) => SetSideButton(SideButton.Back);
+        _sideForwardItem = new ToolStripMenuItem("Forward button (XBUTTON2)") { CheckOnClick = false };
+        _sideForwardItem.Click += (_, _) => SetSideButton(SideButton.Forward);
+
+        var sideButtonMenu = new ToolStripMenuItem("Side Button Minimizes");
+        sideButtonMenu.DropDownItems.Add(_sideOffItem);
+        sideButtonMenu.DropDownItems.Add(_sideBackItem);
+        sideButtonMenu.DropDownItems.Add(_sideForwardItem);
+        UpdateSideButtonChecks();
 
         _startupItem = new ToolStripMenuItem("Start with Windows")
         {
@@ -56,6 +90,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         var menu = new ContextMenuStrip();
         menu.Items.Add(_enabledItem);
+        menu.Items.Add(_middleClickItem);
+        menu.Items.Add(sideButtonMenu);
         menu.Items.Add(_startupItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exitItem);
@@ -73,6 +109,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             ShowHotKeyFailure();
         }
+
+        EnsureMouseHookState();
     }
 
     private bool SetHotKeyEnabled(bool enabled, bool showFailure)
@@ -103,6 +141,47 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _enabledItem.Checked = false;
         _notifyIcon.Text = $"{AppDisplayName} (disabled)";
         return true;
+    }
+
+    private void SetMiddleClickEnabled(bool enabled)
+    {
+        _middleClickEnabled = enabled;
+        _mouseHook.MiddleClickEnabled = enabled;
+        _middleClickItem.Checked = enabled;
+        AppSettings.SaveMiddleClickEnabled(enabled);
+        EnsureMouseHookState();
+    }
+
+    private void SetSideButton(SideButton button)
+    {
+        _sideButton = button;
+        _mouseHook.SideButtonAction = button;
+        UpdateSideButtonChecks();
+        AppSettings.SaveSideButton(button);
+        EnsureMouseHookState();
+    }
+
+    private void UpdateSideButtonChecks()
+    {
+        _sideOffItem.Checked = _sideButton == SideButton.Off;
+        _sideBackItem.Checked = _sideButton == SideButton.Back;
+        _sideForwardItem.Checked = _sideButton == SideButton.Forward;
+    }
+
+    private void EnsureMouseHookState()
+    {
+        var needHook = _middleClickEnabled || _sideButton != SideButton.Off;
+        if (needHook)
+        {
+            if (!_mouseHook.IsInstalled && !_mouseHook.Install())
+            {
+                ShowMouseHookFailure();
+            }
+
+            return;
+        }
+
+        _mouseHook.Uninstall();
     }
 
     private void ToggleStartup()
@@ -167,6 +246,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
             ToolTipIcon.Error);
     }
 
+    private void ShowMouseHookFailure()
+    {
+        _notifyIcon.ShowBalloonTip(
+            5000,
+            AppDisplayName,
+            "Mouse button actions could not be enabled. The low-level mouse hook failed to install.",
+            ToolTipIcon.Error);
+    }
+
     private static void MinimizeForegroundWindow()
     {
         var foregroundWindow = NativeMethods.GetForegroundWindow();
@@ -196,6 +284,35 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _ = NativeMethods.ShowWindow(foregroundWindow, NativeMethods.SW_MINIMIZE);
     }
 
+    private static void SendCtrlW()
+    {
+        var inputs = new[]
+        {
+            KeyInput(NativeMethods.VK_CONTROL, keyUp: false),
+            KeyInput(NativeMethods.VK_W, keyUp: false),
+            KeyInput(NativeMethods.VK_W, keyUp: true),
+            KeyInput(NativeMethods.VK_CONTROL, keyUp: true),
+        };
+
+        _ = NativeMethods.SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+    }
+
+    private static INPUT KeyInput(ushort virtualKey, bool keyUp) => new()
+    {
+        type = NativeMethods.INPUT_KEYBOARD,
+        U = new InputUnion
+        {
+            ki = new KEYBDINPUT
+            {
+                wVk = virtualKey,
+                wScan = 0,
+                dwFlags = keyUp ? NativeMethods.KEYEVENTF_KEYUP : 0u,
+                time = 0,
+                dwExtraInfo = UIntPtr.Zero,
+            }
+        }
+    };
+
     protected override void ExitThreadCore()
     {
         Dispose();
@@ -212,6 +329,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (disposing)
         {
             _hotKeyWindow.Dispose();
+            _mouseHook.Dispose();
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
             _trayIcon.Dispose();
@@ -283,41 +401,5 @@ internal sealed class HotKeyWindow : NativeWindow, IDisposable
         DestroyHandle();
         _disposed = true;
         GC.SuppressFinalize(this);
-    }
-}
-
-internal static partial class NativeMethods
-{
-    public const int SW_MINIMIZE = 6;
-
-    [LibraryImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
-
-    [LibraryImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool UnregisterHotKey(IntPtr hWnd, int id);
-
-    [LibraryImport("user32.dll")]
-    public static partial IntPtr GetForegroundWindow();
-
-    [LibraryImport("user32.dll")]
-    public static partial IntPtr GetShellWindow();
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool ShowWindow(IntPtr hWnd, int nCmdShow);
-
-    [LibraryImport("user32.dll", SetLastError = true)]
-    public static partial uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
-
-    [LibraryImport("user32.dll", EntryPoint = "GetClassNameW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
-    private static partial int GetClassNameCore(IntPtr hWnd, Span<char> lpClassName, int nMaxCount);
-
-    public static string GetClassName(IntPtr hWnd)
-    {
-        Span<char> buffer = stackalloc char[256];
-        var length = GetClassNameCore(hWnd, buffer, buffer.Length);
-        return length <= 0 ? string.Empty : new string(buffer[..length]);
     }
 }

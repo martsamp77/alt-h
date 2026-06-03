@@ -5,12 +5,15 @@
 This repository contains a small Windows tray utility built with .NET and Windows Forms.
 
 - `AltHMinimize.csproj` defines a WinExe targeting `net10.0-windows` with WinForms, nullable references, implicit usings, and unsafe blocks enabled.
-- `Program.cs` contains the app entry point, tray context, global hotkey window, and Win32 interop helpers.
+- `Program.cs` contains the app entry point, tray context (`TrayApplicationContext`), and the global hotkey window (`HotKeyWindow`).
+- `NativeMethods.cs` isolates the Win32 P/Invoke surface (hotkey, window, low-level mouse hook, `SendInput`) and the interop structs.
+- `MouseHook.cs` owns the low-level mouse hook (`WH_MOUSE_LL`), its suppression logic, the message-only dispatcher, and the `SideButton` enum.
+- `AppSettings.cs` reads and writes the mouse-action preferences under `HKCU\Software\AltHMinimize`.
 - `app.manifest` sets execution privileges to `asInvoker`.
 - `README.md` documents build and usage basics.
 - `bin/` and `obj/` are generated outputs. Do not edit them directly.
 
-There is no separate `src/`, `tests/`, or assets directory. If the app grows, move reusable logic into focused classes before adding broad structure.
+Logic is split across focused top-level files (no `src/` or `tests/` directory yet); `Assets/` holds the embedded icon. Keep interop in `NativeMethods`, and continue adding focused classes before introducing broader folder structure.
 
 ## Build, Test, and Development Commands
 
@@ -44,8 +47,11 @@ No automated test project exists yet. For current changes, run `dotnet build` an
 
 - `Alt+H` minimizes the focused non-shell window.
 - The tray menu can enable/disable the hotkey.
+- Middle-click sends `Ctrl+W` when enabled, and the original middle-click is suppressed; disabling it restores native middle-click.
+- The selected side button (Back `XBUTTON1` / Forward `XBUTTON2`) minimizes the focused window and is suppressed; `Off` restores native navigation.
+- Mouse-action choices persist under `HKCU\Software\AltHMinimize` across restarts, and the mouse hook installs only while an action is enabled.
 - Startup registration toggles the `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` value.
-- Exit unregisters the hotkey and removes the tray icon.
+- Exit unregisters the hotkey, removes the mouse hook, and removes the tray icon.
 
 If tests are added, create `AltHMinimize.Tests` and keep pure logic testable without a desktop session.
 
