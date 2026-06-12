@@ -13,6 +13,7 @@ internal static class AppSettings
     private const string SettingsKey = @"Software\AltHMinimize";
     private const string MiddleClickValue = "MiddleClickCtrlW";
     private const string SideButtonValue = "SideButtonAction";
+    private const string FirstRunShownValue = "FirstRunShown";
 
     public static bool LoadMiddleClickEnabled() => ReadDword(MiddleClickValue, defaultValue: 1) != 0;
 
@@ -28,6 +29,10 @@ internal static class AppSettings
             : SideButton.Forward;
 
     public static void SaveSideButton(SideButton button) => WriteDword(SideButtonValue, (int)button);
+
+    public static bool LoadFirstRunShown() => ReadDword(FirstRunShownValue, defaultValue: 0) != 0;
+
+    public static void SaveFirstRunShown() => WriteDword(FirstRunShownValue, 1);
 
     private static int ReadDword(string name, int defaultValue) =>
         ReadValue(name) is int value ? value : defaultValue;

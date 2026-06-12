@@ -9,6 +9,14 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
+        // A second instance would register a second mouse hook (double Ctrl+W per
+        // middle click) and fail hotkey registration; exit silently instead.
+        using var instanceMutex = new Mutex(initiallyOwned: true, "AltHMinimize.SingleInstance", out var createdNew);
+        if (!createdNew)
+        {
+            return;
+        }
+
         ApplicationConfiguration.Initialize();
         Application.Run(new TrayApplicationContext());
     }
@@ -31,10 +39,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem _sideBackItem;
     private readonly ToolStripMenuItem _sideForwardItem;
     private readonly ToolStripMenuItem _startupItem;
+    private readonly ToolStripMenuItem _pauseItem;
 
     private bool _hotKeyEnabled = true;
     private bool _middleClickEnabled;
     private SideButton _sideButton;
+    private bool _paused;
     private bool _disposed;
 
     public TrayApplicationContext()
@@ -85,6 +95,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
         _startupItem.Click += (_, _) => ToggleStartup();
 
+        _pauseItem = new ToolStripMenuItem("Pause All")
+        {
+            Checked = false,
+            CheckOnClick = false
+        };
+        _pauseItem.Click += (_, _) => SetPaused(!_paused);
+
         var exitItem = new ToolStripMenuItem("Exit");
         exitItem.Click += (_, _) => ExitThread();
 
@@ -93,6 +110,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add(_middleClickItem);
         menu.Items.Add(sideButtonMenu);
         menu.Items.Add(_startupItem);
+        menu.Items.Add(_pauseItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exitItem);
 
@@ -111,13 +129,31 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
 
         EnsureMouseHookState();
+        ShowFirstRunBalloon();
+    }
+
+    private void ShowFirstRunBalloon()
+    {
+        if (AppSettings.LoadFirstRunShown())
+        {
+            return;
+        }
+
+        _notifyIcon.ShowBalloonTip(
+            8000,
+            AppDisplayName,
+            "Alt+H minimizes the focused window. Middle-click now sends Ctrl+W (close tab) "
+                + "and the Forward side button minimizes — both can be changed in this tray menu.",
+            ToolTipIcon.Info);
+        AppSettings.SaveFirstRunShown();
     }
 
     private bool SetHotKeyEnabled(bool enabled, bool showFailure)
     {
         if (enabled)
         {
-            if (!_hotKeyWindow.RegisterAltH())
+            // While paused, only record the intent; registration happens on resume.
+            if (!_paused && !_hotKeyWindow.RegisterAltH())
             {
                 _hotKeyEnabled = false;
                 _enabledItem.Checked = false;
@@ -132,15 +168,47 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
             _hotKeyEnabled = true;
             _enabledItem.Checked = true;
-            _notifyIcon.Text = AppDisplayName;
+            UpdateTrayText();
             return true;
         }
 
         _hotKeyWindow.UnregisterAltH();
         _hotKeyEnabled = false;
         _enabledItem.Checked = false;
-        _notifyIcon.Text = $"{AppDisplayName} (disabled)";
+        UpdateTrayText();
         return true;
+    }
+
+    private void SetPaused(bool paused)
+    {
+        _paused = paused;
+        _pauseItem.Checked = paused;
+
+        if (paused)
+        {
+            _hotKeyWindow.UnregisterAltH();
+            _mouseHook.Uninstall();
+        }
+        else
+        {
+            if (_hotKeyEnabled)
+            {
+                SetHotKeyEnabled(enabled: true, showFailure: true);
+            }
+
+            EnsureMouseHookState();
+        }
+
+        UpdateTrayText();
+    }
+
+    private void UpdateTrayText()
+    {
+        _notifyIcon.Text = _paused
+            ? $"{AppDisplayName} (paused)"
+            : _hotKeyEnabled
+                ? AppDisplayName
+                : $"{AppDisplayName} (disabled)";
     }
 
     private void SetMiddleClickEnabled(bool enabled)
@@ -170,7 +238,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void EnsureMouseHookState()
     {
-        var needHook = _middleClickEnabled || _sideButton != SideButton.Off;
+        var needHook = !_paused && (_middleClickEnabled || _sideButton != SideButton.Off);
         if (needHook)
         {
             if (!_mouseHook.IsInstalled && !_mouseHook.Install())
@@ -233,7 +301,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void ShowStatusBalloon()
     {
-        var status = _hotKeyEnabled ? "Alt+H is enabled." : "Alt+H is disabled.";
+        var status = _paused
+            ? "Alt-H is paused."
+            : _hotKeyEnabled
+                ? "Alt+H is enabled."
+                : "Alt+H is disabled.";
         _notifyIcon.ShowBalloonTip(2500, AppDisplayName, status, ToolTipIcon.Info);
     }
 
