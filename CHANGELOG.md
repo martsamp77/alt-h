@@ -8,6 +8,7 @@ This project uses Semantic Versioning: `MAJOR.MINOR.PATCH`.
 
 ### Added
 
+- Added independent actions for the Back and Forward side buttons: each can be bound to Minimize Window, Close Window, Close Tab (`Ctrl+W`), or Play/Pause Media. The previous single side-button setting migrates automatically.
 - Added a "Pause All" tray item that temporarily disables the hotkey and all mouse actions at once.
 - Added a one-time first-run notification explaining the default actions, including that middle-click→`Ctrl+W` is on by default.
 - Added automated tests and CI; pushing a `v*` tag now builds release assets and creates a draft GitHub release.

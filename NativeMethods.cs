@@ -6,6 +6,10 @@ internal static partial class NativeMethods
 {
     public const int SW_MINIMIZE = 6;
 
+    // System menu close command.
+    public const uint WM_SYSCOMMAND = 0x0112;
+    public const int SC_CLOSE = 0xF060;
+
     // Low-level mouse hook.
     public const int WH_MOUSE_LL = 14;
     public const int HC_ACTION = 0;
@@ -28,6 +32,7 @@ internal static partial class NativeMethods
     public const uint KEYEVENTF_KEYUP = 0x0002;
     public const ushort VK_CONTROL = 0x11;
     public const ushort VK_W = 0x57;
+    public const ushort VK_MEDIA_PLAY_PAUSE = 0xB3;
 
     public delegate IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam);
 

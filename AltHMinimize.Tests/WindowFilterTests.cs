@@ -5,35 +5,35 @@ namespace AltHMinimize.Tests;
 public class WindowFilterTests
 {
     [Fact]
-    public void NormalWindow_ShouldMinimize()
+    public void NormalWindow_IsTargeted()
     {
-        Assert.True(WindowFilter.ShouldMinimize("Notepad", isShellWindow: false, isOwnProcess: false));
+        Assert.True(WindowFilter.ShouldTarget("Notepad", isShellWindow: false, isOwnProcess: false));
     }
 
     [Fact]
-    public void NullClassName_ShouldMinimize()
+    public void NullClassName_IsTargeted()
     {
-        Assert.True(WindowFilter.ShouldMinimize(null, isShellWindow: false, isOwnProcess: false));
+        Assert.True(WindowFilter.ShouldTarget(null, isShellWindow: false, isOwnProcess: false));
     }
 
     [Fact]
-    public void ShellWindow_ShouldNotMinimize()
+    public void ShellWindow_IsNotTargeted()
     {
-        Assert.False(WindowFilter.ShouldMinimize("Notepad", isShellWindow: true, isOwnProcess: false));
+        Assert.False(WindowFilter.ShouldTarget("Notepad", isShellWindow: true, isOwnProcess: false));
     }
 
     [Theory]
     [InlineData("Shell_TrayWnd")]
     [InlineData("Progman")]
     [InlineData("WorkerW")]
-    public void ShellClassNames_ShouldNotMinimize(string className)
+    public void ShellClassNames_AreNotTargeted(string className)
     {
-        Assert.False(WindowFilter.ShouldMinimize(className, isShellWindow: false, isOwnProcess: false));
+        Assert.False(WindowFilter.ShouldTarget(className, isShellWindow: false, isOwnProcess: false));
     }
 
     [Fact]
-    public void OwnProcess_ShouldNotMinimize()
+    public void OwnProcess_IsNotTargeted()
     {
-        Assert.False(WindowFilter.ShouldMinimize("Notepad", isShellWindow: false, isOwnProcess: true));
+        Assert.False(WindowFilter.ShouldTarget("Notepad", isShellWindow: false, isOwnProcess: true));
     }
 }

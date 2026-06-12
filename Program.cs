@@ -35,28 +35,29 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly NotifyIcon _notifyIcon;
     private readonly ToolStripMenuItem _enabledItem;
     private readonly ToolStripMenuItem _middleClickItem;
-    private readonly ToolStripMenuItem _sideOffItem;
-    private readonly ToolStripMenuItem _sideBackItem;
-    private readonly ToolStripMenuItem _sideForwardItem;
+    private readonly Dictionary<ButtonAction, ToolStripMenuItem> _backItems = [];
+    private readonly Dictionary<ButtonAction, ToolStripMenuItem> _forwardItems = [];
     private readonly ToolStripMenuItem _startupItem;
     private readonly ToolStripMenuItem _pauseItem;
 
     private bool _hotKeyEnabled = true;
     private bool _middleClickEnabled;
-    private SideButton _sideButton;
+    private ButtonAction _backAction;
+    private ButtonAction _forwardAction;
     private bool _paused;
     private bool _disposed;
 
     public TrayApplicationContext()
     {
-        _hotKeyWindow = new HotKeyWindow(MinimizeForegroundWindow);
+        _hotKeyWindow = new HotKeyWindow(Actions.MinimizeForegroundWindow);
 
         _middleClickEnabled = AppSettings.LoadMiddleClickEnabled();
-        _sideButton = AppSettings.LoadSideButton();
-        _mouseHook = new MouseHook(SendCtrlW, MinimizeForegroundWindow)
+        (_backAction, _forwardAction) = AppSettings.LoadButtonActions();
+        _mouseHook = new MouseHook(Actions.SendCtrlW, OnSideButton)
         {
             MiddleClickEnabled = _middleClickEnabled,
-            SideButtonAction = _sideButton,
+            BackButtonEnabled = _backAction != ButtonAction.Off,
+            ForwardButtonEnabled = _forwardAction != ButtonAction.Off,
         };
 
         _trayIcon = LoadAppIcon();
@@ -75,18 +76,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
         _middleClickItem.Click += (_, _) => SetMiddleClickEnabled(!_middleClickEnabled);
 
-        _sideOffItem = new ToolStripMenuItem("Off") { CheckOnClick = false };
-        _sideOffItem.Click += (_, _) => SetSideButton(SideButton.Off);
-        _sideBackItem = new ToolStripMenuItem("Back button (XBUTTON1)") { CheckOnClick = false };
-        _sideBackItem.Click += (_, _) => SetSideButton(SideButton.Back);
-        _sideForwardItem = new ToolStripMenuItem("Forward button (XBUTTON2)") { CheckOnClick = false };
-        _sideForwardItem.Click += (_, _) => SetSideButton(SideButton.Forward);
-
-        var sideButtonMenu = new ToolStripMenuItem("Side Button Minimizes");
-        sideButtonMenu.DropDownItems.Add(_sideOffItem);
-        sideButtonMenu.DropDownItems.Add(_sideBackItem);
-        sideButtonMenu.DropDownItems.Add(_sideForwardItem);
-        UpdateSideButtonChecks();
+        var backMenu = CreateButtonActionMenu(
+            "Back Button (XBUTTON1)", _backItems, action => SetButtonAction(isBack: true, action));
+        var forwardMenu = CreateButtonActionMenu(
+            "Forward Button (XBUTTON2)", _forwardItems, action => SetButtonAction(isBack: false, action));
+        UpdateButtonActionChecks();
 
         _startupItem = new ToolStripMenuItem("Start with Windows")
         {
@@ -108,7 +102,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var menu = new ContextMenuStrip();
         menu.Items.Add(_enabledItem);
         menu.Items.Add(_middleClickItem);
-        menu.Items.Add(sideButtonMenu);
+        menu.Items.Add(backMenu);
+        menu.Items.Add(forwardMenu);
         menu.Items.Add(_startupItem);
         menu.Items.Add(_pauseItem);
         menu.Items.Add(new ToolStripSeparator());
@@ -220,25 +215,70 @@ internal sealed class TrayApplicationContext : ApplicationContext
         EnsureMouseHookState();
     }
 
-    private void SetSideButton(SideButton button)
+    private static readonly (ButtonAction Action, string Label)[] _actionLabels =
+    [
+        (ButtonAction.Off, "Off"),
+        (ButtonAction.Minimize, "Minimize Window"),
+        (ButtonAction.CloseWindow, "Close Window"),
+        (ButtonAction.CtrlW, "Close Tab (Ctrl+W)"),
+        (ButtonAction.MediaPlayPause, "Play/Pause Media"),
+    ];
+
+    private static ToolStripMenuItem CreateButtonActionMenu(
+        string title,
+        Dictionary<ButtonAction, ToolStripMenuItem> items,
+        Action<ButtonAction> onSelect)
     {
-        _sideButton = button;
-        _mouseHook.SideButtonAction = button;
-        UpdateSideButtonChecks();
-        AppSettings.SaveSideButton(button);
+        var menu = new ToolStripMenuItem(title);
+        foreach (var (action, label) in _actionLabels)
+        {
+            var item = new ToolStripMenuItem(label) { CheckOnClick = false };
+            item.Click += (_, _) => onSelect(action);
+            items[action] = item;
+            menu.DropDownItems.Add(item);
+        }
+
+        return menu;
+    }
+
+    private void SetButtonAction(bool isBack, ButtonAction action)
+    {
+        if (isBack)
+        {
+            _backAction = action;
+            _mouseHook.BackButtonEnabled = action != ButtonAction.Off;
+        }
+        else
+        {
+            _forwardAction = action;
+            _mouseHook.ForwardButtonEnabled = action != ButtonAction.Off;
+        }
+
+        UpdateButtonActionChecks();
+        AppSettings.SaveButtonActions(_backAction, _forwardAction);
         EnsureMouseHookState();
     }
 
-    private void UpdateSideButtonChecks()
+    private void UpdateButtonActionChecks()
     {
-        _sideOffItem.Checked = _sideButton == SideButton.Off;
-        _sideBackItem.Checked = _sideButton == SideButton.Back;
-        _sideForwardItem.Checked = _sideButton == SideButton.Forward;
+        foreach (var (action, item) in _backItems)
+        {
+            item.Checked = action == _backAction;
+        }
+
+        foreach (var (action, item) in _forwardItems)
+        {
+            item.Checked = action == _forwardAction;
+        }
     }
+
+    private void OnSideButton(ushort xButton) =>
+        Actions.Execute(xButton == NativeMethods.XBUTTON1 ? _backAction : _forwardAction);
 
     private void EnsureMouseHookState()
     {
-        var needHook = !_paused && (_middleClickEnabled || _sideButton != SideButton.Off);
+        var needHook = !_paused &&
+            (_middleClickEnabled || _backAction != ButtonAction.Off || _forwardAction != ButtonAction.Off);
         if (needHook)
         {
             if (!_mouseHook.IsInstalled && !_mouseHook.Install())
@@ -326,55 +366,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
             "Mouse button actions could not be enabled. The low-level mouse hook failed to install.",
             ToolTipIcon.Error);
     }
-
-    private static void MinimizeForegroundWindow()
-    {
-        var foregroundWindow = NativeMethods.GetForegroundWindow();
-        if (foregroundWindow == IntPtr.Zero)
-        {
-            return;
-        }
-
-        var isShellWindow = foregroundWindow == NativeMethods.GetShellWindow();
-        var className = NativeMethods.GetClassName(foregroundWindow);
-        NativeMethods.GetWindowThreadProcessId(foregroundWindow, out var processId);
-
-        if (!WindowFilter.ShouldMinimize(className, isShellWindow, processId == Environment.ProcessId))
-        {
-            return;
-        }
-
-        _ = NativeMethods.ShowWindow(foregroundWindow, NativeMethods.SW_MINIMIZE);
-    }
-
-    private static void SendCtrlW()
-    {
-        var inputs = new[]
-        {
-            KeyInput(NativeMethods.VK_CONTROL, keyUp: false),
-            KeyInput(NativeMethods.VK_W, keyUp: false),
-            KeyInput(NativeMethods.VK_W, keyUp: true),
-            KeyInput(NativeMethods.VK_CONTROL, keyUp: true),
-        };
-
-        _ = NativeMethods.SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
-    }
-
-    private static INPUT KeyInput(ushort virtualKey, bool keyUp) => new()
-    {
-        type = NativeMethods.INPUT_KEYBOARD,
-        U = new InputUnion
-        {
-            ki = new KEYBDINPUT
-            {
-                wVk = virtualKey,
-                wScan = 0,
-                dwFlags = keyUp ? NativeMethods.KEYEVENTF_KEYUP : 0u,
-                time = 0,
-                dwExtraInfo = UIntPtr.Zero,
-            }
-        }
-    };
 
     protected override void ExitThreadCore()
     {

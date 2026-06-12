@@ -20,7 +20,8 @@ internal static class HookDecision
         uint mouseData,
         uint flags,
         bool middleClickEnabled,
-        SideButton sideButton)
+        bool backButtonEnabled,
+        bool forwardButtonEnabled)
     {
         if (middleClickEnabled &&
             (message == NativeMethods.WM_MBUTTONDOWN || message == NativeMethods.WM_MBUTTONUP))
@@ -31,7 +32,7 @@ internal static class HookDecision
                 : HookAction.Suppress;
         }
 
-        if (sideButton != SideButton.Off &&
+        if ((backButtonEnabled || forwardButtonEnabled) &&
             (message == NativeMethods.WM_XBUTTONDOWN || message == NativeMethods.WM_XBUTTONUP))
         {
             // Ignore synthetic events to avoid acting on input we (or other tools) injected.
@@ -42,12 +43,12 @@ internal static class HookDecision
 
             var xButton = (ushort)((mouseData >> 16) & 0xFFFF);
             var match =
-                (sideButton == SideButton.Back && xButton == NativeMethods.XBUTTON1) ||
-                (sideButton == SideButton.Forward && xButton == NativeMethods.XBUTTON2);
+                (backButtonEnabled && xButton == NativeMethods.XBUTTON1) ||
+                (forwardButtonEnabled && xButton == NativeMethods.XBUTTON2);
 
             if (match)
             {
-                // Suppress only the configured side button; dispatch only on down.
+                // Suppress only buttons with an action assigned; dispatch only on down.
                 return message == NativeMethods.WM_XBUTTONDOWN
                     ? HookAction.SuppressAndPostSide
                     : HookAction.Suppress;

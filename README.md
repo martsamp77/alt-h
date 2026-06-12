@@ -3,7 +3,7 @@
 A small, low-overhead Windows tray utility for window and mouse-button shortcuts. It:
 
 - Registers `Alt+H` as a global hotkey that minimizes the currently focused window.
-- Can minimize the focused window from a **thumb/side mouse button** (Back or Forward).
+- Can bind each **thumb/side mouse button** (Back and Forward, independently) to minimize, close window, `Ctrl+W`, or play/pause media.
 - Can remap the **scroll-wheel click (middle button)** to `Ctrl+W` to close the active tab/document.
 
 It is built as a lightweight alternative to heavyweight vendor mouse software (e.g. Logitech
@@ -68,8 +68,9 @@ Run `AltHMinimize.exe`. It appears in the system tray with menu options to:
 
 - **Alt+H Enabled** — toggle the global `Alt+H` minimize hotkey.
 - **Middle-Click Closes Tab (Ctrl+W)** — toggle remapping the scroll-wheel click to `Ctrl+W` (on by default).
-- **Side Button Minimizes** — choose which thumb/side button minimizes the focused window: `Off`, `Back button (XBUTTON1)`, or `Forward button (XBUTTON2)` (Forward by default).
+- **Back Button (XBUTTON1)** / **Forward Button (XBUTTON2)** — bind each thumb/side button independently to `Off`, `Minimize Window`, `Close Window`, `Close Tab (Ctrl+W)`, or `Play/Pause Media`. Defaults: Back `Off`, Forward `Minimize Window`.
 - **Start with Windows** — add or remove the per-user startup entry.
+- **Pause All** — temporarily disable the hotkey and all mouse actions at once.
 - **Exit**.
 
 The mouse-action choices are saved under `HKCU\Software\AltHMinimize` and restored on the next launch. The low-level mouse hook is only installed while at least one mouse action is enabled.
