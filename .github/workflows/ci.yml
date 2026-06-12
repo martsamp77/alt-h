@@ -17,10 +17,13 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore
-        run: dotnet restore AltHMinimize.csproj
+        run: dotnet restore AltHMinimize.slnx
 
       - name: Build
-        run: dotnet build AltHMinimize.csproj -c Release --no-restore -warnaserror
+        run: dotnet build AltHMinimize.slnx -c Release --no-restore -warnaserror
+
+      - name: Test
+        run: dotnet test AltHMinimize.slnx -c Release --no-build
 
       - name: Format check
-        run: dotnet format AltHMinimize.csproj --verify-no-changes --no-restore
+        run: dotnet format AltHMinimize.slnx --verify-no-changes --no-restore

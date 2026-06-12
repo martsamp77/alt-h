@@ -18,26 +18,30 @@ internal static class AppSettings
 
     public static void SaveMiddleClickEnabled(bool enabled) => WriteDword(MiddleClickValue, enabled ? 1 : 0);
 
-    public static SideButton LoadSideButton()
-    {
-        var value = ReadDword(SideButtonValue, defaultValue: (int)SideButton.Forward);
-        return value is >= (int)SideButton.Off and <= (int)SideButton.Forward
+    public static SideButton LoadSideButton() => ParseSideButton(ReadValue(SideButtonValue));
+
+    /// <summary>Maps a raw registry value to a <see cref="SideButton"/>, defaulting to Forward.</summary>
+    public static SideButton ParseSideButton(object? registryValue) =>
+        registryValue is int value
+            && value is >= (int)SideButton.Off and <= (int)SideButton.Forward
             ? (SideButton)value
             : SideButton.Forward;
-    }
 
     public static void SaveSideButton(SideButton button) => WriteDword(SideButtonValue, (int)button);
 
-    private static int ReadDword(string name, int defaultValue)
+    private static int ReadDword(string name, int defaultValue) =>
+        ReadValue(name) is int value ? value : defaultValue;
+
+    private static object? ReadValue(string name)
     {
         try
         {
             using var key = Registry.CurrentUser.OpenSubKey(SettingsKey, writable: false);
-            return key?.GetValue(name) is int value ? value : defaultValue;
+            return key?.GetValue(name);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
         {
-            return defaultValue;
+            return null;
         }
     }
 

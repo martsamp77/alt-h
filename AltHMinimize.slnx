@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="AltHMinimize.csproj" />
+  <Project Path="AltHMinimize.Tests/AltHMinimize.Tests.csproj" />
+</Solution>

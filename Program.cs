@@ -263,20 +263,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
-        var shellWindow = NativeMethods.GetShellWindow();
-        if (foregroundWindow == shellWindow)
-        {
-            return;
-        }
-
+        var isShellWindow = foregroundWindow == NativeMethods.GetShellWindow();
         var className = NativeMethods.GetClassName(foregroundWindow);
-        if (className is "Shell_TrayWnd" or "Progman" or "WorkerW")
-        {
-            return;
-        }
-
         NativeMethods.GetWindowThreadProcessId(foregroundWindow, out var processId);
-        if (processId == Environment.ProcessId)
+
+        if (!WindowFilter.ShouldMinimize(className, isShellWindow, processId == Environment.ProcessId))
         {
             return;
         }

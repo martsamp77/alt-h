@@ -17,6 +17,16 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The app project lives at the repo root; keep the test project out of its globs. -->
+    <Compile Remove="AltHMinimize.Tests\**" />
+    <None Remove="AltHMinimize.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="Assets\AltHMinimize.ico" LogicalName="AltHMinimize.Assets.AltHMinimize.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="AltHMinimize.Tests" />
   </ItemGroup>
 </Project>

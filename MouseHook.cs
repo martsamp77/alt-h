@@ -77,40 +77,25 @@ internal sealed class MouseHook : NativeWindow, IDisposable
         {
             var message = wParam.ToInt32();
 
-            if (MiddleClickEnabled &&
-                (message == NativeMethods.WM_MBUTTONDOWN || message == NativeMethods.WM_MBUTTONUP))
-            {
-                if (message == NativeMethods.WM_MBUTTONDOWN)
-                {
-                    NativeMethods.PostMessageW(Handle, WM_APP_MIDDLE, IntPtr.Zero, IntPtr.Zero);
-                }
-
-                return 1; // Suppress the original middle-click (both down and up).
-            }
-
-            if (SideButtonAction != SideButton.Off &&
-                (message == NativeMethods.WM_XBUTTONDOWN || message == NativeMethods.WM_XBUTTONUP))
+            uint mouseData = 0;
+            uint flags = 0;
+            if (message == NativeMethods.WM_XBUTTONDOWN || message == NativeMethods.WM_XBUTTONUP)
             {
                 var data = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
+                mouseData = data.mouseData;
+                flags = data.flags;
+            }
 
-                // Ignore synthetic events to avoid acting on input we (or other tools) injected.
-                if ((data.flags & NativeMethods.LLMHF_INJECTED) == 0)
-                {
-                    var xButton = (ushort)((data.mouseData >> 16) & 0xFFFF);
-                    var match =
-                        (SideButtonAction == SideButton.Back && xButton == NativeMethods.XBUTTON1) ||
-                        (SideButtonAction == SideButton.Forward && xButton == NativeMethods.XBUTTON2);
-
-                    if (match)
-                    {
-                        if (message == NativeMethods.WM_XBUTTONDOWN)
-                        {
-                            NativeMethods.PostMessageW(Handle, WM_APP_SIDE, IntPtr.Zero, IntPtr.Zero);
-                        }
-
-                        return 1; // Suppress only the configured side button.
-                    }
-                }
+            switch (HookDecision.Decide(message, mouseData, flags, MiddleClickEnabled, SideButtonAction))
+            {
+                case HookAction.SuppressAndPostMiddle:
+                    NativeMethods.PostMessageW(Handle, WM_APP_MIDDLE, IntPtr.Zero, IntPtr.Zero);
+                    return 1;
+                case HookAction.SuppressAndPostSide:
+                    NativeMethods.PostMessageW(Handle, WM_APP_SIDE, IntPtr.Zero, IntPtr.Zero);
+                    return 1;
+                case HookAction.Suppress:
+                    return 1;
             }
         }
 
