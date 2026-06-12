@@ -50,7 +50,17 @@ To uninstall:
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/martsamp77/alt-h/main/install.ps1))) -Uninstall
 ```
 
-You can also download the MSI from the GitHub Releases page. Release artifacts are not code-signed yet, so Windows SmartScreen may show a warning.
+You can also download the MSI from the GitHub Releases page.
+
+### SmartScreen warning
+
+Release artifacts are not code-signed, so Windows SmartScreen may warn when you run a downloaded
+executable. Click **More info → Run anyway** to proceed. To verify a download, compare its hash
+against `SHA256SUMS.txt` from the same release:
+
+```powershell
+Get-FileHash .\AltHMinimize-v0.3.0-win-x64.exe -Algorithm SHA256
+```
 
 ## Use
 
@@ -75,7 +85,8 @@ The mouse-action choices are saved under `HKCU\Software\AltHMinimize` and restor
 
 - The app uses a custom Windows-native icon for the executable and system tray.
 - Releases follow Semantic Versioning: `MAJOR.MINOR.PATCH`.
-- Release assets are built with `scripts\package-release.ps1`.
+- Release assets are built with `scripts\package-release.ps1`. Pushing a `v*` tag builds them on
+  CI and creates a draft GitHub release for review.
 
 ## License
 
