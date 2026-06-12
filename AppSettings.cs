@@ -27,6 +27,7 @@ internal static class AppSettings
     private const string BackActionValue = "BackButtonAction";
     private const string ForwardActionValue = "ForwardButtonAction";
     private const string FirstRunShownValue = "FirstRunShown";
+    private const string ExcludedProcessesValue = "ExcludedProcesses";
 
     public static bool LoadMiddleClickEnabled() => ReadDword(MiddleClickValue, defaultValue: 1) != 0;
 
@@ -84,6 +85,32 @@ internal static class AppSettings
     public static bool LoadFirstRunShown() => ReadDword(FirstRunShownValue, defaultValue: 0) != 0;
 
     public static void SaveFirstRunShown() => WriteDword(FirstRunShownValue, 1);
+
+    public static string[] LoadExcludedProcesses() => ParseExcludedProcesses(ReadValue(ExcludedProcessesValue));
+
+    /// <summary>Maps a raw registry value to a clean, de-duplicated process-name list.</summary>
+    public static string[] ParseExcludedProcesses(object? registryValue) =>
+        registryValue is string[] values
+            ? values
+                .Where(v => !string.IsNullOrWhiteSpace(v))
+                .Select(v => v.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray()
+            : [];
+
+    public static void SaveExcludedProcesses(IEnumerable<string> processNames)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(SettingsKey, writable: true)
+                ?? Registry.CurrentUser.CreateSubKey(SettingsKey, writable: true);
+            key.SetValue(ExcludedProcessesValue, processNames.ToArray(), RegistryValueKind.MultiString);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
+        {
+            // Best-effort persistence; the in-memory list still applies for this session.
+        }
+    }
 
     private static int ReadDword(string name, int defaultValue) =>
         ReadValue(name) is int value ? value : defaultValue;

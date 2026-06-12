@@ -39,11 +39,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly Dictionary<ButtonAction, ToolStripMenuItem> _forwardItems = [];
     private readonly ToolStripMenuItem _startupItem;
     private readonly ToolStripMenuItem _pauseItem;
+    private readonly ToolStripMenuItem _excludedMenu;
+    private readonly ForegroundWatcher _foregroundWatcher;
+    private readonly List<string> _excludedProcesses;
 
     private bool _hotKeyEnabled = true;
     private bool _middleClickEnabled;
     private ButtonAction _backAction;
     private ButtonAction _forwardAction;
+    private string? _lastForegroundProcess;
     private bool _paused;
     private bool _disposed;
 
@@ -53,12 +57,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _middleClickEnabled = AppSettings.LoadMiddleClickEnabled();
         (_backAction, _forwardAction) = AppSettings.LoadButtonActions();
+        _excludedProcesses = [.. AppSettings.LoadExcludedProcesses()];
         _mouseHook = new MouseHook(Actions.SendCtrlW, OnSideButton)
         {
             MiddleClickEnabled = _middleClickEnabled,
             BackButtonEnabled = _backAction != ButtonAction.Off,
             ForwardButtonEnabled = _forwardAction != ButtonAction.Off,
         };
+        _foregroundWatcher = new ForegroundWatcher(OnForegroundProcessChanged);
 
         _trayIcon = LoadAppIcon();
 
@@ -82,6 +88,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
             "Forward Button (XBUTTON2)", _forwardItems, action => SetButtonAction(isBack: false, action));
         UpdateButtonActionChecks();
 
+        _excludedMenu = new ToolStripMenuItem("Excluded Apps");
+        _excludedMenu.DropDownOpening += (_, _) => RebuildExcludedMenu();
+        RebuildExcludedMenu();
+
         _startupItem = new ToolStripMenuItem("Start with Windows")
         {
             Checked = IsStartupEnabled(),
@@ -104,6 +114,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add(_middleClickItem);
         menu.Items.Add(backMenu);
         menu.Items.Add(forwardMenu);
+        menu.Items.Add(_excludedMenu);
         menu.Items.Add(_startupItem);
         menu.Items.Add(_pauseItem);
         menu.Items.Add(new ToolStripSeparator());
@@ -124,7 +135,73 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
 
         EnsureMouseHookState();
+        _foregroundWatcher.Start();
         ShowFirstRunBalloon();
+    }
+
+    private void OnForegroundProcessChanged(string processName)
+    {
+        _lastForegroundProcess = processName;
+        _mouseHook.SuppressionPaused = _excludedProcesses.Contains(processName, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private void RebuildExcludedMenu()
+    {
+        _excludedMenu.DropDownItems.Clear();
+
+        var current = _lastForegroundProcess;
+        var canAdd = current is not null
+            && !_excludedProcesses.Contains(current, StringComparer.OrdinalIgnoreCase);
+        var addItem = new ToolStripMenuItem(current is null ? "Add Current App" : $"Add Current App ({current})")
+        {
+            Enabled = canAdd
+        };
+        addItem.Click += (_, _) => AddExcludedProcess();
+        _excludedMenu.DropDownItems.Add(addItem);
+        _excludedMenu.DropDownItems.Add(new ToolStripSeparator());
+
+        if (_excludedProcesses.Count == 0)
+        {
+            _excludedMenu.DropDownItems.Add(new ToolStripMenuItem("(none — mouse actions apply everywhere)")
+            {
+                Enabled = false
+            });
+            return;
+        }
+
+        foreach (var name in _excludedProcesses)
+        {
+            var item = new ToolStripMenuItem($"{name} — click to remove");
+            item.Click += (_, _) => RemoveExcludedProcess(name);
+            _excludedMenu.DropDownItems.Add(item);
+        }
+    }
+
+    private void AddExcludedProcess()
+    {
+        if (_lastForegroundProcess is not { } name
+            || _excludedProcesses.Contains(name, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        _excludedProcesses.Add(name);
+        AppSettings.SaveExcludedProcesses(_excludedProcesses);
+        OnExcludedProcessesChanged();
+    }
+
+    private void RemoveExcludedProcess(string name)
+    {
+        _excludedProcesses.RemoveAll(p => string.Equals(p, name, StringComparison.OrdinalIgnoreCase));
+        AppSettings.SaveExcludedProcesses(_excludedProcesses);
+        OnExcludedProcessesChanged();
+    }
+
+    private void OnExcludedProcessesChanged()
+    {
+        // Re-evaluate against the current foreground app so the change applies immediately.
+        _mouseHook.SuppressionPaused = _lastForegroundProcess is { } current
+            && _excludedProcesses.Contains(current, StringComparer.OrdinalIgnoreCase);
     }
 
     private void ShowFirstRunBalloon()
@@ -383,6 +460,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (disposing)
         {
             _hotKeyWindow.Dispose();
+            _foregroundWatcher.Dispose();
             _mouseHook.Dispose();
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();

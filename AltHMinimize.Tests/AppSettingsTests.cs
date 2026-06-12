@@ -45,6 +45,27 @@ public class AppSettingsTests
         Assert.Equal(ButtonAction.Minimize, AppSettings.ParseButtonAction(raw, ButtonAction.Minimize));
     }
 
+    [Fact]
+    public void ParseExcludedProcesses_CleansAndDeduplicates()
+    {
+        var raw = new[] { "blender", "  Blender  ", "", "   ", "mstsc" };
+
+        var parsed = AppSettings.ParseExcludedProcesses(raw);
+
+        Assert.Equal(2, parsed.Length);
+        Assert.Contains("blender", parsed);
+        Assert.Contains("mstsc", parsed);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("blender")]
+    [InlineData(1)]
+    public void ParseExcludedProcesses_MissingOrWrongKind_ReturnsEmpty(object? raw)
+    {
+        Assert.Empty(AppSettings.ParseExcludedProcesses(raw));
+    }
+
     [Theory]
     [InlineData((int)SideButton.Off, (int)ButtonAction.Off, (int)ButtonAction.Off)]
     [InlineData((int)SideButton.Back, (int)ButtonAction.Minimize, (int)ButtonAction.Off)]

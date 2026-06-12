@@ -23,6 +23,10 @@ internal sealed class MouseHook : NativeWindow, IDisposable
     private IntPtr _hookHandle;
     private bool _disposed;
 
+    // Read inside the hook callback, written from the foreground watcher; volatile keeps
+    // the hot path to a single flag check with no locking.
+    private volatile bool _suppressionPaused;
+
     public MouseHook(Action onMiddleClick, Action<ushort> onSideButton)
     {
         _onMiddleClick = onMiddleClick;
@@ -36,6 +40,13 @@ internal sealed class MouseHook : NativeWindow, IDisposable
     public bool BackButtonEnabled { get; set; }
 
     public bool ForwardButtonEnabled { get; set; }
+
+    /// <summary>While true (foreground app is excluded), every event passes through untouched.</summary>
+    public bool SuppressionPaused
+    {
+        get => _suppressionPaused;
+        set => _suppressionPaused = value;
+    }
 
     public bool IsInstalled => _hookHandle != IntPtr.Zero;
 
@@ -68,7 +79,7 @@ internal sealed class MouseHook : NativeWindow, IDisposable
 
     private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
-        if (nCode == NativeMethods.HC_ACTION)
+        if (nCode == NativeMethods.HC_ACTION && !_suppressionPaused)
         {
             var message = wParam.ToInt32();
 

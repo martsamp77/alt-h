@@ -69,6 +69,7 @@ Run `AltHMinimize.exe`. It appears in the system tray with menu options to:
 - **Alt+H Enabled** — toggle the global `Alt+H` minimize hotkey.
 - **Middle-Click Closes Tab (Ctrl+W)** — toggle remapping the scroll-wheel click to `Ctrl+W` (on by default).
 - **Back Button (XBUTTON1)** / **Forward Button (XBUTTON2)** — bind each thumb/side button independently to `Off`, `Minimize Window`, `Close Window`, `Close Tab (Ctrl+W)`, or `Play/Pause Media`. Defaults: Back `Off`, Forward `Minimize Window`.
+- **Excluded Apps** — apps where all mouse remapping is disabled (native middle-click and side buttons), e.g. Blender or games. Focus the app, then pick **Add Current App** from this submenu; click an entry to remove it.
 - **Start with Windows** — add or remove the per-user startup entry.
 - **Pause All** — temporarily disable the hotkey and all mouse actions at once.
 - **Exit**.
