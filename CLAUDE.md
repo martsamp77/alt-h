@@ -16,4 +16,4 @@ Repository structure, coding style, manual-testing checklist, and security conve
 - The low-level mouse hook callback must not do real work: it suppresses synchronously, then posts `WM_APP_MIDDLE`/`WM_APP_SIDE` to the message-only window so the action runs from `WndProc` — staying under Windows' `LowLevelHooksTimeout` (~300 ms). Don't move logic into the callback.
 - `SetWindowsHookExW` in `NativeMethods.cs` is intentionally a classic `[DllImport]` (not `LibraryImport`) because the source generator can't marshal the hook callback delegate. Don't "modernize" it.
 - The app runs `asInvoker`; elevated windows are unaffected by the hotkey, hook, and synthesized input. This is by design — never add elevation.
-- No automated tests exist; verification is `dotnet build` plus the manual checklist in AGENTS.md.
+- Verification is `dotnet test AltHMinimize.slnx` plus the manual checklist in AGENTS.md (interop and tray behavior aren't unit-tested). Keep new decision logic in the pure classes (`HookDecision`, `WindowFilter`, `Actions`) so it stays testable.

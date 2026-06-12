@@ -43,7 +43,9 @@ Keep interop code isolated in helper types such as `NativeMethods`. Prefer named
 
 ## Testing Guidelines
 
-No automated test project exists yet. For current changes, run `dotnet build` and manually verify:
+Run `dotnet test AltHMinimize.slnx` first; `AltHMinimize.Tests` covers the pure decision logic
+(hook suppression, window filtering, settings parsing/migration). Interop and tray behavior
+still need manual verification:
 
 - `Alt+H` minimizes the focused non-shell window.
 - The tray menu can enable/disable the hotkey.
@@ -53,7 +55,9 @@ No automated test project exists yet. For current changes, run `dotnet build` an
 - Startup registration toggles the `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` value.
 - Exit unregisters the hotkey, removes the mouse hook, and removes the tray icon.
 
-If tests are added, create `AltHMinimize.Tests` and keep pure logic testable without a desktop session.
+Keep pure logic testable without a desktop session: decision functions live in `HookDecision`,
+`WindowFilter`, and `AppSettings` parse helpers — extend those rather than embedding logic in
+interop callbacks.
 
 ## Commit & Pull Request Guidelines
 
