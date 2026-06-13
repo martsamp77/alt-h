@@ -6,6 +6,8 @@ This project uses Semantic Versioning: `MAJOR.MINOR.PATCH`.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-12
+
 ### Added
 
 - Added a per-app exclusion list: mouse remapping turns off automatically while an excluded app (e.g. Blender, a game) is focused. Manage it from the new "Excluded Apps" tray submenu via "Add Current App".

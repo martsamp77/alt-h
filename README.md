@@ -59,7 +59,7 @@ executable. Click **More info → Run anyway** to proceed. To verify a download,
 against `SHA256SUMS.txt` from the same release:
 
 ```powershell
-Get-FileHash .\AltHMinimize-v0.3.0-win-x64.exe -Algorithm SHA256
+Get-FileHash .\AltHMinimize-v0.4.0-win-x64.exe -Algorithm SHA256
 ```
 
 ## Use
