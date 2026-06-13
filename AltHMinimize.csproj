@@ -10,10 +10,23 @@
     <RootNamespace>AltHMinimize</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\AltHMinimize.ico</ApplicationIcon>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The app project lives at the repo root; keep the test project out of its globs. -->
+    <Compile Remove="AltHMinimize.Tests\**" />
+    <None Remove="AltHMinimize.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="Assets\AltHMinimize.ico" LogicalName="AltHMinimize.Assets.AltHMinimize.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="AltHMinimize.Tests" />
   </ItemGroup>
 </Project>

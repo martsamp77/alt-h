@@ -2,13 +2,6 @@ using System.Runtime.InteropServices;
 
 namespace AltHMinimize;
 
-internal enum SideButton
-{
-    Off = 0,
-    Back = 1,    // XBUTTON1
-    Forward = 2, // XBUTTON2
-}
-
 /// <summary>
 /// Installs a global low-level mouse hook (<c>WH_MOUSE_LL</c>) on the thread that owns it
 /// (the WinForms UI thread, which runs the message pump). The hook callback only decides
@@ -22,7 +15,7 @@ internal sealed class MouseHook : NativeWindow, IDisposable
     private const int WM_APP_SIDE = 0x8000 + 2;   // WM_APP + 2
 
     private readonly Action _onMiddleClick;
-    private readonly Action _onSideButton;
+    private readonly Action<ushort> _onSideButton;
 
     // Held in a field so the GC cannot collect the delegate while the native hook references it.
     private readonly NativeMethods.HookProc _hookProc;
@@ -30,7 +23,11 @@ internal sealed class MouseHook : NativeWindow, IDisposable
     private IntPtr _hookHandle;
     private bool _disposed;
 
-    public MouseHook(Action onMiddleClick, Action onSideButton)
+    // Read inside the hook callback, written from the foreground watcher; volatile keeps
+    // the hot path to a single flag check with no locking.
+    private volatile bool _suppressionPaused;
+
+    public MouseHook(Action onMiddleClick, Action<ushort> onSideButton)
     {
         _onMiddleClick = onMiddleClick;
         _onSideButton = onSideButton;
@@ -40,7 +37,16 @@ internal sealed class MouseHook : NativeWindow, IDisposable
 
     public bool MiddleClickEnabled { get; set; }
 
-    public SideButton SideButtonAction { get; set; }
+    public bool BackButtonEnabled { get; set; }
+
+    public bool ForwardButtonEnabled { get; set; }
+
+    /// <summary>While true (foreground app is excluded), every event passes through untouched.</summary>
+    public bool SuppressionPaused
+    {
+        get => _suppressionPaused;
+        set => _suppressionPaused = value;
+    }
 
     public bool IsInstalled => _hookHandle != IntPtr.Zero;
 
@@ -73,44 +79,30 @@ internal sealed class MouseHook : NativeWindow, IDisposable
 
     private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
-        if (nCode == NativeMethods.HC_ACTION)
+        if (nCode == NativeMethods.HC_ACTION && !_suppressionPaused)
         {
             var message = wParam.ToInt32();
 
-            if (MiddleClickEnabled &&
-                (message == NativeMethods.WM_MBUTTONDOWN || message == NativeMethods.WM_MBUTTONUP))
-            {
-                if (message == NativeMethods.WM_MBUTTONDOWN)
-                {
-                    NativeMethods.PostMessageW(Handle, WM_APP_MIDDLE, IntPtr.Zero, IntPtr.Zero);
-                }
-
-                return 1; // Suppress the original middle-click (both down and up).
-            }
-
-            if (SideButtonAction != SideButton.Off &&
-                (message == NativeMethods.WM_XBUTTONDOWN || message == NativeMethods.WM_XBUTTONUP))
+            uint mouseData = 0;
+            uint flags = 0;
+            if (message == NativeMethods.WM_XBUTTONDOWN || message == NativeMethods.WM_XBUTTONUP)
             {
                 var data = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
+                mouseData = data.mouseData;
+                flags = data.flags;
+            }
 
-                // Ignore synthetic events to avoid acting on input we (or other tools) injected.
-                if ((data.flags & NativeMethods.LLMHF_INJECTED) == 0)
-                {
-                    var xButton = (ushort)((data.mouseData >> 16) & 0xFFFF);
-                    var match =
-                        (SideButtonAction == SideButton.Back && xButton == NativeMethods.XBUTTON1) ||
-                        (SideButtonAction == SideButton.Forward && xButton == NativeMethods.XBUTTON2);
-
-                    if (match)
-                    {
-                        if (message == NativeMethods.WM_XBUTTONDOWN)
-                        {
-                            NativeMethods.PostMessageW(Handle, WM_APP_SIDE, IntPtr.Zero, IntPtr.Zero);
-                        }
-
-                        return 1; // Suppress only the configured side button.
-                    }
-                }
+            switch (HookDecision.Decide(message, mouseData, flags, MiddleClickEnabled, BackButtonEnabled, ForwardButtonEnabled))
+            {
+                case HookAction.SuppressAndPostMiddle:
+                    NativeMethods.PostMessageW(Handle, WM_APP_MIDDLE, IntPtr.Zero, IntPtr.Zero);
+                    return 1;
+                case HookAction.SuppressAndPostSide:
+                    var xButton = (ushort)((mouseData >> 16) & 0xFFFF);
+                    NativeMethods.PostMessageW(Handle, WM_APP_SIDE, new IntPtr(xButton), IntPtr.Zero);
+                    return 1;
+                case HookAction.Suppress:
+                    return 1;
             }
         }
 
@@ -125,7 +117,7 @@ internal sealed class MouseHook : NativeWindow, IDisposable
                 _onMiddleClick();
                 return;
             case WM_APP_SIDE:
-                _onSideButton();
+                _onSideButton((ushort)m.WParam);
                 return;
         }
 

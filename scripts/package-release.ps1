@@ -16,6 +16,11 @@ if (-not $Version) {
 
 $Tag = if ($Version.StartsWith("v")) { $Version } else { "v$Version" }
 $VersionNumber = $Tag.TrimStart("v")
+
+$CsprojVersion = $ProjectXml.Project.PropertyGroup.Version
+if ($CsprojVersion -and $VersionNumber -ne $CsprojVersion) {
+    throw "Version mismatch: packaging $VersionNumber but AltHMinimize.csproj has <Version>$CsprojVersion</Version>. Update the csproj (and CHANGELOG.md) first."
+}
 $OutDir = Join-Path $ArtifactsRoot $Tag
 $PublishDir = Join-Path $OutDir "publish"
 $ExeAssetName = "AltHMinimize-$Tag-$Runtime.exe"

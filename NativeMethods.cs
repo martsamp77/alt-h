@@ -6,6 +6,10 @@ internal static partial class NativeMethods
 {
     public const int SW_MINIMIZE = 6;
 
+    // System menu close command.
+    public const uint WM_SYSCOMMAND = 0x0112;
+    public const int SC_CLOSE = 0xF060;
+
     // Low-level mouse hook.
     public const int WH_MOUSE_LL = 14;
     public const int HC_ACTION = 0;
@@ -28,8 +32,16 @@ internal static partial class NativeMethods
     public const uint KEYEVENTF_KEYUP = 0x0002;
     public const ushort VK_CONTROL = 0x11;
     public const ushort VK_W = 0x57;
+    public const ushort VK_MEDIA_PLAY_PAUSE = 0xB3;
+
+    // Foreground-window change events.
+    public const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
+    public const uint WINEVENT_OUTOFCONTEXT = 0x0000;
 
     public delegate IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+    public delegate void WinEventProc(
+        IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
 
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -66,6 +78,16 @@ internal static partial class NativeMethods
     // so this single import stays a classic [DllImport].
     [DllImport("user32.dll", EntryPoint = "SetWindowsHookExW", SetLastError = true)]
     public static extern IntPtr SetWindowsHookExW(int idHook, HookProc lpfn, IntPtr hMod, uint dwThreadId);
+
+    // Same delegate-marshaling limitation as SetWindowsHookExW: stays a classic [DllImport].
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr SetWinEventHook(
+        uint eventMin, uint eventMax, IntPtr hmodWinEventProc, WinEventProc pfnWinEventProc,
+        uint idProcess, uint idThread, uint dwFlags);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool UnhookWinEvent(IntPtr hWinEventHook);
 
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

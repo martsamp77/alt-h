@@ -9,6 +9,14 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
+        // A second instance would register a second mouse hook (double Ctrl+W per
+        // middle click) and fail hotkey registration; exit silently instead.
+        using var instanceMutex = new Mutex(initiallyOwned: true, "AltHMinimize.SingleInstance", out var createdNew);
+        if (!createdNew)
+        {
+            return;
+        }
+
         ApplicationConfiguration.Initialize();
         Application.Run(new TrayApplicationContext());
     }
@@ -27,27 +35,36 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly NotifyIcon _notifyIcon;
     private readonly ToolStripMenuItem _enabledItem;
     private readonly ToolStripMenuItem _middleClickItem;
-    private readonly ToolStripMenuItem _sideOffItem;
-    private readonly ToolStripMenuItem _sideBackItem;
-    private readonly ToolStripMenuItem _sideForwardItem;
+    private readonly Dictionary<ButtonAction, ToolStripMenuItem> _backItems = [];
+    private readonly Dictionary<ButtonAction, ToolStripMenuItem> _forwardItems = [];
     private readonly ToolStripMenuItem _startupItem;
+    private readonly ToolStripMenuItem _pauseItem;
+    private readonly ToolStripMenuItem _excludedMenu;
+    private readonly ForegroundWatcher _foregroundWatcher;
+    private readonly List<string> _excludedProcesses;
 
     private bool _hotKeyEnabled = true;
     private bool _middleClickEnabled;
-    private SideButton _sideButton;
+    private ButtonAction _backAction;
+    private ButtonAction _forwardAction;
+    private string? _lastForegroundProcess;
+    private bool _paused;
     private bool _disposed;
 
     public TrayApplicationContext()
     {
-        _hotKeyWindow = new HotKeyWindow(MinimizeForegroundWindow);
+        _hotKeyWindow = new HotKeyWindow(Actions.MinimizeForegroundWindow);
 
         _middleClickEnabled = AppSettings.LoadMiddleClickEnabled();
-        _sideButton = AppSettings.LoadSideButton();
-        _mouseHook = new MouseHook(SendCtrlW, MinimizeForegroundWindow)
+        (_backAction, _forwardAction) = AppSettings.LoadButtonActions();
+        _excludedProcesses = [.. AppSettings.LoadExcludedProcesses()];
+        _mouseHook = new MouseHook(Actions.SendCtrlW, OnSideButton)
         {
             MiddleClickEnabled = _middleClickEnabled,
-            SideButtonAction = _sideButton,
+            BackButtonEnabled = _backAction != ButtonAction.Off,
+            ForwardButtonEnabled = _forwardAction != ButtonAction.Off,
         };
+        _foregroundWatcher = new ForegroundWatcher(OnForegroundProcessChanged);
 
         _trayIcon = LoadAppIcon();
 
@@ -65,18 +82,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
         _middleClickItem.Click += (_, _) => SetMiddleClickEnabled(!_middleClickEnabled);
 
-        _sideOffItem = new ToolStripMenuItem("Off") { CheckOnClick = false };
-        _sideOffItem.Click += (_, _) => SetSideButton(SideButton.Off);
-        _sideBackItem = new ToolStripMenuItem("Back button (XBUTTON1)") { CheckOnClick = false };
-        _sideBackItem.Click += (_, _) => SetSideButton(SideButton.Back);
-        _sideForwardItem = new ToolStripMenuItem("Forward button (XBUTTON2)") { CheckOnClick = false };
-        _sideForwardItem.Click += (_, _) => SetSideButton(SideButton.Forward);
+        var backMenu = CreateButtonActionMenu(
+            "Back Button (XBUTTON1)", _backItems, action => SetButtonAction(isBack: true, action));
+        var forwardMenu = CreateButtonActionMenu(
+            "Forward Button (XBUTTON2)", _forwardItems, action => SetButtonAction(isBack: false, action));
+        UpdateButtonActionChecks();
 
-        var sideButtonMenu = new ToolStripMenuItem("Side Button Minimizes");
-        sideButtonMenu.DropDownItems.Add(_sideOffItem);
-        sideButtonMenu.DropDownItems.Add(_sideBackItem);
-        sideButtonMenu.DropDownItems.Add(_sideForwardItem);
-        UpdateSideButtonChecks();
+        _excludedMenu = new ToolStripMenuItem("Excluded Apps");
+        _excludedMenu.DropDownOpening += (_, _) => RebuildExcludedMenu();
+        RebuildExcludedMenu();
 
         _startupItem = new ToolStripMenuItem("Start with Windows")
         {
@@ -85,14 +99,24 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
         _startupItem.Click += (_, _) => ToggleStartup();
 
+        _pauseItem = new ToolStripMenuItem("Pause All")
+        {
+            Checked = false,
+            CheckOnClick = false
+        };
+        _pauseItem.Click += (_, _) => SetPaused(!_paused);
+
         var exitItem = new ToolStripMenuItem("Exit");
         exitItem.Click += (_, _) => ExitThread();
 
         var menu = new ContextMenuStrip();
         menu.Items.Add(_enabledItem);
         menu.Items.Add(_middleClickItem);
-        menu.Items.Add(sideButtonMenu);
+        menu.Items.Add(backMenu);
+        menu.Items.Add(forwardMenu);
+        menu.Items.Add(_excludedMenu);
         menu.Items.Add(_startupItem);
+        menu.Items.Add(_pauseItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exitItem);
 
@@ -111,13 +135,97 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
 
         EnsureMouseHookState();
+        _foregroundWatcher.Start();
+        ShowFirstRunBalloon();
+    }
+
+    private void OnForegroundProcessChanged(string processName)
+    {
+        _lastForegroundProcess = processName;
+        _mouseHook.SuppressionPaused = _excludedProcesses.Contains(processName, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private void RebuildExcludedMenu()
+    {
+        _excludedMenu.DropDownItems.Clear();
+
+        var current = _lastForegroundProcess;
+        var canAdd = current is not null
+            && !_excludedProcesses.Contains(current, StringComparer.OrdinalIgnoreCase);
+        var addItem = new ToolStripMenuItem(current is null ? "Add Current App" : $"Add Current App ({current})")
+        {
+            Enabled = canAdd
+        };
+        addItem.Click += (_, _) => AddExcludedProcess();
+        _excludedMenu.DropDownItems.Add(addItem);
+        _excludedMenu.DropDownItems.Add(new ToolStripSeparator());
+
+        if (_excludedProcesses.Count == 0)
+        {
+            _excludedMenu.DropDownItems.Add(new ToolStripMenuItem("(none — mouse actions apply everywhere)")
+            {
+                Enabled = false
+            });
+            return;
+        }
+
+        foreach (var name in _excludedProcesses)
+        {
+            var item = new ToolStripMenuItem($"{name} — click to remove");
+            item.Click += (_, _) => RemoveExcludedProcess(name);
+            _excludedMenu.DropDownItems.Add(item);
+        }
+    }
+
+    private void AddExcludedProcess()
+    {
+        if (_lastForegroundProcess is not { } name
+            || _excludedProcesses.Contains(name, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        _excludedProcesses.Add(name);
+        AppSettings.SaveExcludedProcesses(_excludedProcesses);
+        OnExcludedProcessesChanged();
+    }
+
+    private void RemoveExcludedProcess(string name)
+    {
+        _excludedProcesses.RemoveAll(p => string.Equals(p, name, StringComparison.OrdinalIgnoreCase));
+        AppSettings.SaveExcludedProcesses(_excludedProcesses);
+        OnExcludedProcessesChanged();
+    }
+
+    private void OnExcludedProcessesChanged()
+    {
+        // Re-evaluate against the current foreground app so the change applies immediately.
+        _mouseHook.SuppressionPaused = _lastForegroundProcess is { } current
+            && _excludedProcesses.Contains(current, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private void ShowFirstRunBalloon()
+    {
+        if (AppSettings.LoadFirstRunShown())
+        {
+            return;
+        }
+
+        _notifyIcon.ShowBalloonTip(
+            8000,
+            AppDisplayName,
+            "Alt+H minimizes the focused window. Middle-click now sends Ctrl+W (close tab) "
+                + "and the Forward side button minimizes — both can be changed in this tray menu.",
+            ToolTipIcon.Info);
+        AppSettings.SaveFirstRunShown();
     }
 
     private bool SetHotKeyEnabled(bool enabled, bool showFailure)
     {
         if (enabled)
         {
-            if (!_hotKeyWindow.RegisterAltH())
+            // While paused, only record the intent; registration happens on resume.
+            if (!_paused && !_hotKeyWindow.RegisterAltH())
             {
                 _hotKeyEnabled = false;
                 _enabledItem.Checked = false;
@@ -132,15 +240,47 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
             _hotKeyEnabled = true;
             _enabledItem.Checked = true;
-            _notifyIcon.Text = AppDisplayName;
+            UpdateTrayText();
             return true;
         }
 
         _hotKeyWindow.UnregisterAltH();
         _hotKeyEnabled = false;
         _enabledItem.Checked = false;
-        _notifyIcon.Text = $"{AppDisplayName} (disabled)";
+        UpdateTrayText();
         return true;
+    }
+
+    private void SetPaused(bool paused)
+    {
+        _paused = paused;
+        _pauseItem.Checked = paused;
+
+        if (paused)
+        {
+            _hotKeyWindow.UnregisterAltH();
+            _mouseHook.Uninstall();
+        }
+        else
+        {
+            if (_hotKeyEnabled)
+            {
+                SetHotKeyEnabled(enabled: true, showFailure: true);
+            }
+
+            EnsureMouseHookState();
+        }
+
+        UpdateTrayText();
+    }
+
+    private void UpdateTrayText()
+    {
+        _notifyIcon.Text = _paused
+            ? $"{AppDisplayName} (paused)"
+            : _hotKeyEnabled
+                ? AppDisplayName
+                : $"{AppDisplayName} (disabled)";
     }
 
     private void SetMiddleClickEnabled(bool enabled)
@@ -152,25 +292,70 @@ internal sealed class TrayApplicationContext : ApplicationContext
         EnsureMouseHookState();
     }
 
-    private void SetSideButton(SideButton button)
+    private static readonly (ButtonAction Action, string Label)[] _actionLabels =
+    [
+        (ButtonAction.Off, "Off"),
+        (ButtonAction.Minimize, "Minimize Window"),
+        (ButtonAction.CloseWindow, "Close Window"),
+        (ButtonAction.CtrlW, "Close Tab (Ctrl+W)"),
+        (ButtonAction.MediaPlayPause, "Play/Pause Media"),
+    ];
+
+    private static ToolStripMenuItem CreateButtonActionMenu(
+        string title,
+        Dictionary<ButtonAction, ToolStripMenuItem> items,
+        Action<ButtonAction> onSelect)
     {
-        _sideButton = button;
-        _mouseHook.SideButtonAction = button;
-        UpdateSideButtonChecks();
-        AppSettings.SaveSideButton(button);
+        var menu = new ToolStripMenuItem(title);
+        foreach (var (action, label) in _actionLabels)
+        {
+            var item = new ToolStripMenuItem(label) { CheckOnClick = false };
+            item.Click += (_, _) => onSelect(action);
+            items[action] = item;
+            menu.DropDownItems.Add(item);
+        }
+
+        return menu;
+    }
+
+    private void SetButtonAction(bool isBack, ButtonAction action)
+    {
+        if (isBack)
+        {
+            _backAction = action;
+            _mouseHook.BackButtonEnabled = action != ButtonAction.Off;
+        }
+        else
+        {
+            _forwardAction = action;
+            _mouseHook.ForwardButtonEnabled = action != ButtonAction.Off;
+        }
+
+        UpdateButtonActionChecks();
+        AppSettings.SaveButtonActions(_backAction, _forwardAction);
         EnsureMouseHookState();
     }
 
-    private void UpdateSideButtonChecks()
+    private void UpdateButtonActionChecks()
     {
-        _sideOffItem.Checked = _sideButton == SideButton.Off;
-        _sideBackItem.Checked = _sideButton == SideButton.Back;
-        _sideForwardItem.Checked = _sideButton == SideButton.Forward;
+        foreach (var (action, item) in _backItems)
+        {
+            item.Checked = action == _backAction;
+        }
+
+        foreach (var (action, item) in _forwardItems)
+        {
+            item.Checked = action == _forwardAction;
+        }
     }
+
+    private void OnSideButton(ushort xButton) =>
+        Actions.Execute(xButton == NativeMethods.XBUTTON1 ? _backAction : _forwardAction);
 
     private void EnsureMouseHookState()
     {
-        var needHook = _middleClickEnabled || _sideButton != SideButton.Off;
+        var needHook = !_paused &&
+            (_middleClickEnabled || _backAction != ButtonAction.Off || _forwardAction != ButtonAction.Off);
         if (needHook)
         {
             if (!_mouseHook.IsInstalled && !_mouseHook.Install())
@@ -233,7 +418,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void ShowStatusBalloon()
     {
-        var status = _hotKeyEnabled ? "Alt+H is enabled." : "Alt+H is disabled.";
+        var status = _paused
+            ? "Alt-H is paused."
+            : _hotKeyEnabled
+                ? "Alt+H is enabled."
+                : "Alt+H is disabled.";
         _notifyIcon.ShowBalloonTip(2500, AppDisplayName, status, ToolTipIcon.Info);
     }
 
@@ -255,64 +444,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
             ToolTipIcon.Error);
     }
 
-    private static void MinimizeForegroundWindow()
-    {
-        var foregroundWindow = NativeMethods.GetForegroundWindow();
-        if (foregroundWindow == IntPtr.Zero)
-        {
-            return;
-        }
-
-        var shellWindow = NativeMethods.GetShellWindow();
-        if (foregroundWindow == shellWindow)
-        {
-            return;
-        }
-
-        var className = NativeMethods.GetClassName(foregroundWindow);
-        if (className is "Shell_TrayWnd" or "Progman" or "WorkerW")
-        {
-            return;
-        }
-
-        NativeMethods.GetWindowThreadProcessId(foregroundWindow, out var processId);
-        if (processId == Environment.ProcessId)
-        {
-            return;
-        }
-
-        _ = NativeMethods.ShowWindow(foregroundWindow, NativeMethods.SW_MINIMIZE);
-    }
-
-    private static void SendCtrlW()
-    {
-        var inputs = new[]
-        {
-            KeyInput(NativeMethods.VK_CONTROL, keyUp: false),
-            KeyInput(NativeMethods.VK_W, keyUp: false),
-            KeyInput(NativeMethods.VK_W, keyUp: true),
-            KeyInput(NativeMethods.VK_CONTROL, keyUp: true),
-        };
-
-        _ = NativeMethods.SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
-    }
-
-    private static INPUT KeyInput(ushort virtualKey, bool keyUp) => new()
-    {
-        type = NativeMethods.INPUT_KEYBOARD,
-        U = new InputUnion
-        {
-            ki = new KEYBDINPUT
-            {
-                wVk = virtualKey,
-                wScan = 0,
-                dwFlags = keyUp ? NativeMethods.KEYEVENTF_KEYUP : 0u,
-                time = 0,
-                dwExtraInfo = UIntPtr.Zero,
-            }
-        }
-    };
-
     protected override void ExitThreadCore()
     {
         Dispose();
@@ -329,6 +460,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (disposing)
         {
             _hotKeyWindow.Dispose();
+            _foregroundWatcher.Dispose();
             _mouseHook.Dispose();
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
